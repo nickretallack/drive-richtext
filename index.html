@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Google Realtime Quickstart</title>
+
+    <!-- Load the Realtime JavaScript library -->
+    <script src="https://apis.google.com/js/api.js"></script>
+
+    <!-- Load the utility library -->
+    <script src="https://www.gstatic.com/realtime/realtime-client-utils.js"></script>
+  </head>
+  <body>
+    <main>
+      <button id="auth_button">Sign In</button>
+
+      <h1>Realtime Collaboration Quickstart</h1>
+      <p>Now that your application is running, simply type in either text box and see your changes instantly appear in the other one. Open
+      this same document in a <a onclick="window.open(window.location.href);return false;" target="_blank">new tab</a> to see it work across tabs.</p>
+      <textarea id="text_area_1"></textarea>
+      <textarea id="text_area_2"></textarea>
+
+      <!-- Create the toolbar container -->
+      <div id="toolbar">
+        <button class="ql-bold">Bold</button>
+        <button class="ql-italic">Italic</button>
+      </div>
+
+      <!-- Create the editor container -->
+      <div id="editor">
+        <div>Hello World!</div>
+        <div>Some initial <b>bold</b> text</div>
+        <div><br></div>
+      </div>
+
+      <!-- Include the Quill library -->
+      <script src="//cdn.quilljs.com/0.19.14/quill.js"></script>
+
+      <!-- Initialize Quill editor -->
+      <script>
+        var quill = new Quill('#editor');
+        quill.addModule('toolbar', { container: '#toolbar' });
+      </script>
+
+    </main>
+    <script>
+      var clientId = '661099579330-dctm6hcm5co8jt8ug7qreu1kfn1t9ru3.apps.googleusercontent.com';
+      var realtimeUtils = new utils.RealtimeUtils({ clientId: clientId });
+
+      authorize();
+
+      function authorize() {
+        // Attempt to authorize
+        realtimeUtils.authorize(function(response){
+          if(response.error){
+            // Authorization failed because this is the first time the user has used your application,
+            // show the authorize button to prompt them to authorize manually.
+            var button = document.getElementById('auth_button');
+            button.classList.add('visible');
+            button.addEventListener('click', function () {
+              realtimeUtils.authorize(function(response){
+                start();
+              }, true);
+            });
+          } else {
+              start();
+          }
+        }, false);
+      }
+
+      function start() {
+        // With auth taken care of, load a file, or create one if there
+        // is not an id in the URL.
+        var id = realtimeUtils.getParam('id');
+        if (id) {
+          // Load the document id from the URL
+          realtimeUtils.load(id.replace('/', ''), onFileLoaded, onFileInitialize);
+        } else {
+          // Create a new document, add it to the URL
+          realtimeUtils.createRealtimeFile('New Quickstart File', function(createResponse) {
+            window.history.pushState(null, null, '?id=' + createResponse.id);
+            realtimeUtils.load(createResponse.id, onFileLoaded, onFileInitialize);
+          });
+        }
+      }
+
+      // The first time a file is opened, it must be initialized with the
+      // document structure. This function will add a collaborative string
+      // to our model at the root.
+      function onFileInitialize(model) {
+        var string = model.createString();
+        string.setText('Welcome to the Quickstart App!');
+        model.getRoot().set('demo_string', string);
+      }
+
+      // After a file has been initialized and loaded, we can access the
+      // document. We will wire up the data model to the UI.
+      function onFileLoaded(doc) {
+        console.log ("LOADED")
+        var str = doc.getModel().getRoot().get('demo_string');
+        str.addEventListener(gapi.drive.realtime.EventType.TEXT_INSERTED, function(event){
+          console.log("INSERTED", event.index, event.isLocal, event.text);
+          remaining = str.length - event.index - event.text.length
+          quill.updateContents({
+            ops: [
+              {retain: event.index},
+              {insert: event.text},
+              {retain: remaining}
+            ]
+          })
+        })
+        str.addEventListener(gapi.drive.realtime.EventType.TEXT_DELETED, function(event){
+          console.log("DELETED", event.index, event.isLocal, event.text);
+          remaining = str.length - event.index - event.text.length
+          quill.updateContents({
+            ops: [
+              {retain: event.index},
+              {delete: event.text.length},
+              {retain: remaining}
+            ]
+          })
+        })
+
+        wireTextBoxes(str);
+      }
+
+      // Connects the text boxes to the collaborative string
+      function wireTextBoxes(collaborativeString) {
+        var textArea1 = document.getElementById('text_area_1');
+        var textArea2 = document.getElementById('text_area_2');
+        gapi.drive.realtime.databinding.bindString(collaborativeString, textArea1);
+        gapi.drive.realtime.databinding.bindString(collaborativeString, textArea2);
+      }
+    </script>
+  </body>
+</html>
