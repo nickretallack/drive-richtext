@@ -143,25 +143,26 @@
           })
         })
 
+        function apply_format(value){
+          var start = value.get('start');
+          var end = value.get('end');
+          var attributes = value.get('attributes');
+
+          console.log(start.index, end.index, attributes);
+          var length = end.index - start.index;
+          var remaining = str.length - end.index;
+          quill.updateContents({
+            ops: [
+              {retain: start.index},
+              {retain: length, attributes: attributes},
+              {retain: remaining}
+            ]
+          })
+        }
 
         formats.addEventListener(gapi.drive.realtime.EventType.VALUES_ADDED, function(event){
           if (event.isLocal) return;
-          event.values.forEach(function(value) {
-            var start = value.get('start');
-            var end = value.get('end');
-            var attributes = value.get('attributes');
-
-            console.log(start.index, end.index, attributes);
-            var length = end.index - start.index;
-            var remaining = str.length - end.index;
-            quill.updateContents({
-              ops: [
-                {retain: start.index},
-                {retain: length, attributes: attributes},
-                {retain: remaining}
-              ]
-            })
-          })
+          event.values.forEach(apply_format)
           console.log(event.index, event.values.length, event.values[0].type)
         });
 
@@ -171,6 +172,8 @@
         quill.setContents([
           {insert: str.getText()}
         ])
+
+        formats.asArray().forEach(apply_format)
 
         quill.on('text-change', function(delta, source) {
           if (source == 'user') {
