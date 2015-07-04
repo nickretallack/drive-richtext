@@ -99,16 +99,18 @@ function onFileLoaded(doc) {
   }
 
   // helper functions
+  var auto_incrementer = 0;
 
   function create_overlay(start_index, end_index, attribute) {
     console.log('create overlay:', start_index, end_index, attribute)
-    var start_ref = str.registerReference(start_index, true);
-    var end_ref = str.registerReference(end_index, true);
+    var start_ref = str.registerReference(start_index, gapi.drive.realtime.IndexReference.DeleteMode.SHIFT_BEFORE_DELETE);
+    var end_ref = str.registerReference(end_index, gapi.drive.realtime.IndexReference.DeleteMode.SHIFT_BEFORE_DELETE);
     overlays.push(
       model.createMap({
         start: start_ref,
         end: end_ref,
-        attribute: attribute
+        attribute: attribute,
+        id: auto_incrementer++
       })
     )
   }
@@ -140,8 +142,8 @@ function onFileLoaded(doc) {
   function split_or_remove_overlay(start_index, end_index, attribute){
     var found = find_colliding_overlay(overlays, attribute, start_index)
     if (!found) {
-      throw "Oh no!"
-      // found = find_colliding_overlay(overlays, attribute, end_index)
+      console.log("ANOMALY - deleted overlay that wasn't found")
+      return
     }
 
     var overlay = found.overlay;
@@ -246,12 +248,45 @@ function onFileLoaded(doc) {
 
   // Overlay changes
 
+  function preview_overlay(item) {
+    var node = render_overlay(item);
+    $('#overlays tbody').append(node);
+    item.get('start').addEventListener(gapi.drive.realtime.EventType.REFERENCE_SHIFTED, function(event){
+      node.find('.start').text(event.newIndex);
+    })
+    item.get('end').addEventListener(gapi.drive.realtime.EventType.REFERENCE_SHIFTED, function(event){
+      node.find('.end').text(event.newIndex);
+    })
+  }
+
+  function render_overlay(item) {
+    return $('<tr id="overlay-'+item.get('id')+'">'+
+      '<td class="attribute">'+item.get('attribute')+'</td>'+
+      '<td class="start">'+item.get('start').index+'</td>'+
+      '<td class="end">'+item.get('end').index+'</td>'+
+      '</tr>')
+  }
+
+  // function preview_overlay_shifted(item) {
+  //   $('#overlays tbody #overlay-'+item.get('id')).replaceWith(render_overlay(item));
+  // }
+
+  function remove_overlay_preview(item) {
+    $('#overlays tbody #overlay-'+item.get('id')).remove()
+  }
+
   overlays.addEventListener(gapi.drive.realtime.EventType.VALUES_ADDED, function(event){
+    // preview
+    event.values.forEach(preview_overlay);
+
+    // actually apply event
     if (event.isLocal) return;
     event.values.forEach(add_format)
   });
 
   overlays.addEventListener(gapi.drive.realtime.EventType.VALUES_REMOVED, function(event){
+    event.values.forEach(remove_overlay_preview)
+
     if (event.isLocal) return;
     event.values.forEach(remove_format)
   });
@@ -262,7 +297,8 @@ function onFileLoaded(doc) {
     {insert: str.getText()}
   ])
 
-  overlays.asArray().forEach(add_format)
+  overlays.asArray().forEach(preview_overlay);
+  overlays.asArray().forEach(add_format);
 
 
   quill.on('text-change', function(delta, source) {
@@ -294,8 +330,8 @@ function onFileLoaded(doc) {
         if (operation.delete) {
           console.log('delete...', operation.delete)
           new_text_index = text_index + operation.delete;
-          str.removeRange(text_index, text_index + operation.delete);
           delete_overlay_range(text_index, new_text_index);
+          str.removeRange(text_index, text_index + operation.delete);
           text_index = new_text_index;
         }
       }
