@@ -31,8 +31,6 @@
 
       <!-- Create the editor container -->
       <div id="editor">
-        <div>Hello World!</div>
-        <div>Some initial <b>bold</b> text</div>
         <div><br></div>
       </div>
 
@@ -99,34 +97,76 @@
       // After a file has been initialized and loaded, we can access the
       // document. We will wire up the data model to the UI.
       function onFileLoaded(doc) {
+
+        // Drive / Incoming Events
+
         console.log ("LOADED")
-        var str = doc.getModel().getRoot().get('demo_string');
+        var model = doc.getModel()
+        var root = model.getRoot()
+
+        var string_name = 'demo_string';
+        var str = root.get(string_name);
+        if (!str) {
+          str = model.createString();
+          root.set(string_name, str)
+        }
+
+        var format_name = 'formats'
+        var formats = root.get(format_name);
+        if (!formats) {
+          formats = model.createList()
+          root.set(format_name, formats)
+        }
+
         str.addEventListener(gapi.drive.realtime.EventType.TEXT_INSERTED, function(event){
-          if (!event.isLocal) {          
-            console.log("INSERTED", event.index, event.isLocal, event.text);
-            var remaining = str.length - event.index - event.text.length
-            quill.updateContents({
-              ops: [
-                {retain: event.index},
-                {insert: event.text},
-                {retain: remaining}
-              ]
-            })
-          }
+          if (event.isLocal) return;
+          console.log("INSERTED", event.index, event.text);
+          var remaining = str.length - event.index - event.text.length
+          quill.updateContents({
+            ops: [
+              {retain: event.index},
+              {insert: event.text},
+              {retain: remaining}
+            ]
+          })
         })
         str.addEventListener(gapi.drive.realtime.EventType.TEXT_DELETED, function(event){
-          if (!event.isLocal) {
-            console.log("DELETED", event.index, event.isLocal, event.text);
-            var remaining = str.length - event.index - event.text.length
+          if (event.isLocal) return;
+          console.log("DELETED", event.index, event.text);
+          var remaining = str.length - event.index - event.text.length
+          quill.updateContents({
+            ops: [
+              {retain: event.index},
+              {delete: event.text.length},
+              {retain: remaining}
+            ]
+          })
+        })
+
+
+        formats.addEventListener(gapi.drive.realtime.EventType.VALUES_ADDED, function(event){
+          if (event.isLocal) return;
+          event.values.forEach(function(value) {
+            var start = value.get('start');
+            var end = value.get('end');
+            var attributes = value.get('attributes');
+
+            console.log(start.index, end.index, attributes);
+            var length = end.index - start.index;
+            var remaining = str.length - end.index;
             quill.updateContents({
               ops: [
-                {retain: event.index},
-                {delete: event.text.length},
+                {retain: start.index},
+                {retain: length, attributes: attributes},
                 {retain: remaining}
               ]
             })
-          }
-        })
+          })
+          console.log(event.index, event.values.length, event.values[0].type)
+        });
+
+
+        // Quill / Outgoing Events
 
         quill.setContents([
           {insert: str.getText()}
@@ -138,6 +178,11 @@
             for (operation_index in delta.ops) {
               var operation = delta.ops[operation_index];
               console.log(operation.insert, operation.retain, operation.delete)
+
+              if (operation.attributes) {
+                var start_ref = str.registerReference(text_index, true);
+              }
+
               if (operation.retain) {
                 text_index += operation.retain;
               }
@@ -146,6 +191,18 @@
               }
               if (operation.delete) {
                 str.removeRange(text_index, text_index + operation.delete)
+              }
+
+              if (operation.attributes) {
+                var end_ref = str.registerReference(text_index, true);
+                console.log(start_ref, end_ref, operation.attributes);
+                formats.push(
+                  model.createMap({
+                    start: start_ref,
+                    end: end_ref,
+                    attributes: operation.attributes
+                  })
+                )
               }
             }              
           }
