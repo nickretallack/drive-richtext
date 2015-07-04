@@ -8,16 +8,20 @@
 
     <!-- Load the utility library -->
     <script src="https://www.gstatic.com/realtime/realtime-client-utils.js"></script>
+    <style>
+      a {
+        color: blue;
+        cursor: pointer;
+      }
+    </style>
   </head>
   <body>
     <main>
       <button id="auth_button">Sign In</button>
 
       <h1>Realtime Collaboration Quickstart</h1>
-      <p>Now that your application is running, simply type in either text box and see your changes instantly appear in the other one. Open
+      <p> Open
       this same document in a <a onclick="window.open(window.location.href);return false;" target="_blank">new tab</a> to see it work across tabs.</p>
-      <textarea id="text_area_1"></textarea>
-      <textarea id="text_area_2"></textarea>
 
       <!-- Create the toolbar container -->
       <div id="toolbar">
@@ -98,37 +102,54 @@
         console.log ("LOADED")
         var str = doc.getModel().getRoot().get('demo_string');
         str.addEventListener(gapi.drive.realtime.EventType.TEXT_INSERTED, function(event){
-          console.log("INSERTED", event.index, event.isLocal, event.text);
-          remaining = str.length - event.index - event.text.length
-          quill.updateContents({
-            ops: [
-              {retain: event.index},
-              {insert: event.text},
-              {retain: remaining}
-            ]
-          })
+          if (!event.isLocal) {          
+            console.log("INSERTED", event.index, event.isLocal, event.text);
+            var remaining = str.length - event.index - event.text.length
+            quill.updateContents({
+              ops: [
+                {retain: event.index},
+                {insert: event.text},
+                {retain: remaining}
+              ]
+            })
+          }
         })
         str.addEventListener(gapi.drive.realtime.EventType.TEXT_DELETED, function(event){
-          console.log("DELETED", event.index, event.isLocal, event.text);
-          remaining = str.length - event.index - event.text.length
-          quill.updateContents({
-            ops: [
-              {retain: event.index},
-              {delete: event.text.length},
-              {retain: remaining}
-            ]
-          })
+          if (!event.isLocal) {
+            console.log("DELETED", event.index, event.isLocal, event.text);
+            var remaining = str.length - event.index - event.text.length
+            quill.updateContents({
+              ops: [
+                {retain: event.index},
+                {delete: event.text.length},
+                {retain: remaining}
+              ]
+            })
+          }
         })
 
-        wireTextBoxes(str);
-      }
+        quill.setContents([
+          {insert: str.getText()}
+        ])
 
-      // Connects the text boxes to the collaborative string
-      function wireTextBoxes(collaborativeString) {
-        var textArea1 = document.getElementById('text_area_1');
-        var textArea2 = document.getElementById('text_area_2');
-        gapi.drive.realtime.databinding.bindString(collaborativeString, textArea1);
-        gapi.drive.realtime.databinding.bindString(collaborativeString, textArea2);
+        quill.on('text-change', function(delta, source) {
+          if (source == 'user') {
+            var text_index = 0;
+            for (operation_index in delta.ops) {
+              var operation = delta.ops[operation_index];
+              console.log(operation.insert, operation.retain, operation.delete)
+              if (operation.retain) {
+                text_index += operation.retain;
+              }
+              if (operation.insert) {
+                str.insertString(text_index, operation.insert)
+              }
+              if (operation.delete) {
+                str.removeRange(text_index, text_index + operation.delete)
+              }
+            }              
+          }
+        })
       }
     </script>
   </body>
