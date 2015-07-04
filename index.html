@@ -94,6 +94,19 @@
         model.getRoot().set('demo_string', string);
       }
 
+
+      function get_format_at_index(index) {
+        return quill.getContents(index, index+1).ops[0].attributes;
+      }
+
+      function apply_format(value) {
+        var start = value.get('start');
+        var end = value.get('end');
+        var attributes = value.get('attributes');
+
+        quill.formatText(start.index, end.index, attributes)
+      }
+
       // After a file has been initialized and loaded, we can access the
       // document. We will wire up the data model to the UI.
       function onFileLoaded(doc) {
@@ -123,51 +136,13 @@
           console.log("INSERTED", event.index, event.text);
           var attributes = get_format_at_index(event.index);
           quill.insertText(event.index, event.text, attributes);
-
-          // var remaining = str.length - event.index - event.text.length
-          // quill.updateContents({
-          //   ops: [
-          //     {retain: event.index},
-          //     {insert: event.text},
-          //     {retain: remaining}
-          //   ]
-          // })
         })
+
         str.addEventListener(gapi.drive.realtime.EventType.TEXT_DELETED, function(event){
           if (event.isLocal) return;
           console.log("DELETED", event.index, event.text);
           quill.deleteText(event.index, event.index+event.text.length)
-
-          // var remaining = str.length - event.index - event.text.length
-          // quill.updateContents({
-          //   ops: [
-          //     {retain: event.index},
-          //     {delete: event.text.length},
-          //     {retain: remaining}
-          //   ]
-          // })
         })
-
-        function get_format_at_index(index) {
-          return quill.getContents(index, index+1).ops[0].attributes;
-        }
-
-        function apply_format(value) {
-          var start = value.get('start');
-          var end = value.get('end');
-          var attributes = value.get('attributes');
-
-          console.log(start.index, end.index, attributes);
-          var length = end.index - start.index;
-          var remaining = str.length - end.index;
-          quill.updateContents({
-            ops: [
-              {retain: start.index},
-              {retain: length, attributes: attributes},
-              {retain: remaining}
-            ]
-          })
-        }
 
         formats.addEventListener(gapi.drive.realtime.EventType.VALUES_ADDED, function(event){
           if (event.isLocal) return;
@@ -187,12 +162,13 @@
         quill.on('text-change', function(delta, source) {
           if (source == 'user') {
             var text_index = 0;
+            var start_index = null;
             for (operation_index in delta.ops) {
               var operation = delta.ops[operation_index];
               console.log(operation.insert, operation.retain, operation.delete)
 
               if (operation.attributes) {
-                var start_ref = str.registerReference(text_index, true);
+                var start_index = text_index;
               }
 
               if (operation.retain) {
@@ -211,6 +187,7 @@
               }
 
               if (operation.attributes) {
+                var start_ref = str.registerReference(start_index, true);
                 var end_ref = str.registerReference(text_index, true);
                 console.log(start_ref, end_ref, operation.attributes);
                 formats.push(
