@@ -233,7 +233,7 @@ function onFileLoaded(doc) {
   str.addEventListener(gapi.drive.realtime.EventType.TEXT_INSERTED, function(event){
     if (event.isLocal) return;
     console.log("INSERTED", event.index, event.text);
-    var attributes = get_attributes_at_index(event.index);
+    var attributes = get_attributes_at_index(event.index-1);
     quill.insertText(event.index, event.text, attributes);
   })
 
