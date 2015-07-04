@@ -52,7 +52,8 @@ function onFileInitialize(model) {
 
 
 function get_attributes_at_index(index) {
-  return quill.getContents(index, index+1).ops[0].attributes;
+  if (index == 0) return null
+  return quill.getContents(index-1, index).ops[0].attributes;
 }
 
 function apply_format(item, value) {
@@ -72,11 +73,6 @@ function add_format(item) {
 function remove_format(item) {
   apply_format(item, false);
 }
-
-function move_format(item) {
-
-}
-
 
 // After a file has been initialized and loaded, we can access the
 // document. We will wire up the data model to the UI.
@@ -129,13 +125,26 @@ function onFileLoaded(doc) {
     }
   }
 
+  function delete_overlay_range(start_index, end_index) {
+    var deletable_overlays = overlays.asArray().filter(function(overlay){
+      var overlay_start = overlay.get('start').index;
+      var overlay_end = overlay.get('end').index;
+      return overlay_start >= start_index && overlay_end <= end_index;
+    })
+    deletable_overlays.forEach(function(overlay){
+      console.log("remove overlay", overlay.get('start').index, overlay.get('end').index, overlay.get('attribute'));
+      overlays.removeValue(overlay);
+    })
+  }
+
   function split_or_remove_overlay(start_index, end_index, attribute){
-    var found = find_colliding_overlay(overlays, attribute, start_index+1)
+    var found = find_colliding_overlay(overlays, attribute, start_index)
     if (!found) {
-      throw "ANOMALY: removing overlay that wasn't found"
+      throw "Oh no!"
+      // found = find_colliding_overlay(overlays, attribute, end_index)
     }
 
-    var overlay = found.overlay
+    var overlay = found.overlay;
 
     var overlay_start = overlay.get('start')
     var overlay_end = overlay.get('end')
@@ -143,7 +152,6 @@ function onFileLoaded(doc) {
     var matches_start = start_index === overlay_start.index
     var matches_end = end_index === overlay_end.index
 
-    console.log("remove overlay", overlay_start.index, overlay_end.index, attribute)
     remove_overlay(found.index)
     if (matches_start && matches_end) {
       // remove the whole overlay
@@ -162,22 +170,6 @@ function onFileLoaded(doc) {
       create_overlay(overlay_start.index, start_index, attribute) // start half
       create_overlay(end_index, overlay_end.index, attribute); // second half
     }
-
-    // if (matches_start && matches_end) {
-    //   // remove the whole overlay
-    //   remove_overlayValue(overlay)
-    // } else if (matches_start) {
-    //   // erase the start of this overlay
-    //   overlay_start.index = end_index;
-    // } else if (matches_end) {
-    //   // erase the end of this overlay
-    //   overlay_end.index = start_index;
-    // } else {
-    //   // split this overlay into two
-    //   var overlay_end_index = overlay_end.index;
-    //   overlay_end.index = start_index // first half
-    //   create_overlay(str, end_index, overlay_end_index); // second half
-    // }
   }
   
   function remove_overlay(index) {
@@ -192,12 +184,10 @@ function onFileLoaded(doc) {
 
     if (found_start && found_end) {
       // contiguous connection between two existing overlays
-      remove_overlay(found_start.index);
-      remove_overlay(found_end.index);
-      create_overlay(found_start.overlay.get('start').index, found_end.overlay.get('end').index, attribute)
-      // console.log('remove overlay', found_start.overlay.get('start').index, found_start.overlay.get('end').index, attribute)
-      // console.log('remove overlay', found_end.overlay.get('start').index, found_end.overlay.get('end').index, attribute)
       console.log("connect two overlays", attribute)
+      remove_overlay(found_start.index);
+      remove_overlay(found_end.index-1); // previous operation shifts the indexes
+      create_overlay(found_start.overlay.get('start').index, found_end.overlay.get('end').index, attribute)
     } else if (found_start) {
       console.log("extend overlay forward", attribute)
       remove_overlay(found_start.index)
@@ -226,14 +216,25 @@ function onFileLoaded(doc) {
     }
   }
 
-
+  function maybe_insert_overlays(old_attributes, new_attributes, start_index, end_index) {
+    for (var attribute in new_attributes) {
+      if (!(old_attributes && attribute in old_attributes)) {
+        extend_or_create_overlay(start_index, end_index, attribute);
+      }
+    }
+    for (var attribute in old_attributes) {
+      if (!(new_attributes && attribute in new_attributes)) {
+        split_or_remove_overlay(start_index, end_index, attribute);
+      }
+    }
+  }
 
   // Text changes
 
   str.addEventListener(gapi.drive.realtime.EventType.TEXT_INSERTED, function(event){
     if (event.isLocal) return;
     console.log("INSERTED", event.index, event.text);
-    var attributes = get_attributes_at_index(event.index-1);
+    var attributes = get_attributes_at_index(event.index);
     quill.insertText(event.index, event.text, attributes);
   })
 
@@ -248,13 +249,11 @@ function onFileLoaded(doc) {
   overlays.addEventListener(gapi.drive.realtime.EventType.VALUES_ADDED, function(event){
     if (event.isLocal) return;
     event.values.forEach(add_format)
-    // console.log("OVERLAY ADDED", event.index, event.values.length, event.values[0].type)
   });
 
   overlays.addEventListener(gapi.drive.realtime.EventType.VALUES_REMOVED, function(event){
     if (event.isLocal) return;
     event.values.forEach(remove_format)
-    // console.log(event.index, event.values.length, event.values[0].type)
   });
 
   // Quill / Outgoing Events
@@ -269,28 +268,35 @@ function onFileLoaded(doc) {
   quill.on('text-change', function(delta, source) {
     if (source == 'user') {
       var text_index = 0;
-      var start_index = null;
+      var new_text_index = null;
       for (operation_index in delta.ops) {
         var operation = delta.ops[operation_index];
         console.log(operation.insert, operation.retain, operation.delete)
 
         // formatting added via the toolbar
         if (operation.retain) {
-          start_index = text_index;
-          text_index += operation.retain;
-          modify_overlays(start_index, text_index, operation.attributes)
+          new_text_index = text_index + operation.retain;
+          modify_overlays(text_index, new_text_index, operation.attributes)
+          text_index = new_text_index;
         }
 
         if (operation.insert) {
+          console.log('insert...', operation.insert)
+          new_text_index = text_index + operation.insert.length;
           str.insertString(text_index, operation.insert);
-          var attributes = get_attributes_at_index(text_index);
 
-          text_index += operation.insert.length;
+          var attributes = get_attributes_at_index(text_index);
+          maybe_insert_overlays(attributes, operation.attributes, text_index, new_text_index)
+
+          text_index = new_text_index;
         }
 
         if (operation.delete) {
+          console.log('delete...', operation.delete)
+          new_text_index = text_index + operation.delete;
           str.removeRange(text_index, text_index + operation.delete);
-          text_index += operation.delete;
+          delete_overlay_range(text_index, new_text_index);
+          text_index = new_text_index;
         }
       }
     }
