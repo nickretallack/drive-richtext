@@ -1,4 +1,11 @@
 
+random_character = ->
+  chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  chars.charAt Math.floor Math.random() * chars.length
+
+random_id = (length) ->
+  (random_character() for _ in [0..length]).join('')
+
 class CollaborativeRichText
   constructor: ({@model, parent, name, handlers}) ->
     handlers ?= {}
@@ -11,10 +18,6 @@ class CollaborativeRichText
     @str = @get_or_create_field @model.createString, @obj, 'text'
     @overlays = @get_or_create_field @model.createList, @obj, 'overlays'
 
-    @auto_incrementer = if @overlays.length
-      @overlays.get(@overlays.length-1).get('id')
-    else 0
-
   get_or_create_field: (constructor, parent, name) ->
     # progressively extend it in case they have an incompatible model and we're adding new features
     result = parent.get name
@@ -25,7 +28,7 @@ class CollaborativeRichText
 
   setup_events: (handlers) ->
     @overlays.addEventListener gapi.drive.realtime.EventType.VALUES_ADDED, (event) ->
-      if handlers.preview_overlay
+      if handlers.preview_add_overlay
         event.values.forEach handlers.preview_add_overlay
       if handlers.apply_format and not event.isLocal
         event.values.forEach (item) ->
@@ -33,7 +36,7 @@ class CollaborativeRichText
       return
 
     @overlays.addEventListener gapi.drive.realtime.EventType.VALUES_REMOVED, (event) ->
-      if handlers.remove_overlay_preview
+      if handlers.preview_remove_overlay
         event.values.forEach handlers.preview_remove_overlay
       if handlers.apply_format and not event.isLocal
         event.values.forEach (item) ->
@@ -54,8 +57,8 @@ class CollaborativeRichText
 
   run_initial_events: (handlers) ->
     handlers.insert_text? 0, @str.getText()
-    if handlers.preview_overlay
-      @overlays.asArray().forEach handlers.preview_overlay
+    if handlers.preview_add_overlay
+      @overlays.asArray().forEach handlers.preview_add_overlay
     if handlers.apply_format
       @overlays.asArray().forEach (item) => handlers.apply_format item, true
 
@@ -70,7 +73,7 @@ class CollaborativeRichText
         start: overlay.get('start').index
         end: overlay.get('end').index
 
-    for attribute, overlays in attributes
+    for attribute, overlays of attributes
       overlays.sort (a,b) ->
         start_comparison = a.start - b.start
         if start_comparison is 0
@@ -81,13 +84,13 @@ class CollaborativeRichText
 
   create_overlay: (start_index, end_index, attribute) ->
     console.log 'create overlay:', start_index, end_index, attribute
-    start_ref = @str.registerReference start_index, gapi.drive.realtime.IndexReference.DeleteMode.SHIFT_BEFORE_DELETE
+    start_ref = @str.registerReference start_index, gapi.drive.realtime.IndexReference.DeleteMode.SHIFT_AFTER_DELETE
     end_ref = @str.registerReference end_index, gapi.drive.realtime.IndexReference.DeleteMode.SHIFT_BEFORE_DELETE
     @overlays.push @model.createMap
       start: start_ref
       end: end_ref
       attribute: attribute
-      id: @auto_incrementer++
+      id: random_id 20
     return
 
   remove_overlay: (overlay) ->
@@ -119,7 +122,7 @@ class CollaborativeRichText
     matches_start = start_index == overlay_start.index
     matches_end = end_index == overlay_end.index
 
-    remove_overlay overlay
+    @remove_overlay overlay
     if matches_start and matches_end
       # remove the whole overlay
       console.log 'remove whole overlay', attribute
@@ -141,10 +144,10 @@ class CollaborativeRichText
     @create_overlay end_index, overlay.get('end').index, attribute # second half
 
   extend_or_create_overlay: (start_index, end_index, attribute) ->
-    found_start = @find_colliding_overlay attribute, start_index - 1
+    found_start = @find_colliding_overlay attribute, start_index
     found_end = @find_colliding_overlay attribute, end_index
     if found_start and found_end
-      connect_two_overlays found_start, found_end, attribute
+      @connect_two_overlays found_start, found_end, attribute
     else if found_start
       @extend_overlay_forward found_start, end_index, attribute
     else if found_end
@@ -165,7 +168,7 @@ class CollaborativeRichText
     @remove_overlay overlay
     @create_overlay overlay.get('start').index, end_index, attribute
 
-  extend_overlay_backward: (overaly, start_index, attribute) ->
+  extend_overlay_backward: (overlay, start_index, attribute) ->
     console.log 'extend overlay backward', attribute
     @remove_overlay overlay
     @create_overlay start_index, overlay.get('end').index, attribute
@@ -184,7 +187,7 @@ class CollaborativeRichText
 
   insertText: (index, text, attributes) ->
     @str.insertString index, text
-    @formatText index, index + text.length, attributes
+    @formatText index, text.length, attributes
     return
 
   deleteText: (index, length) ->

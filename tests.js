@@ -9,22 +9,49 @@
     parent = model.getRoot();
     name = 'test';
     richtext = null;
+    QUnit.assert.overlays = function(overlays, message) {
+      return this.deepEqual(richtext.debug_overlays(), overlays, message);
+    };
     QUnit.module('tests', {
       beforeEach: function(assert) {
-        return parent.clear();
+        parent.clear();
+        richtext = new CollaborativeRichText({
+          model: model,
+          parent: parent,
+          name: name
+        });
+        return richtext.insertText(0, "123456789");
       }
     });
     QUnit.test('extend forward', function(assert) {
-      richtext = new CollaborativeRichText({
-        model: model,
-        parent: parent,
-        name: name
+      richtext.formatText(3, 1, {
+        bold: true
       });
-      richtext.insertText(0, "123456789");
+      assert.overlays({
+        bold: [
+          {
+            start: 3,
+            end: 4
+          }
+        ]
+      });
+      richtext.formatText(4, 1, {
+        bold: true
+      });
+      return assert.overlays({
+        bold: [
+          {
+            start: 3,
+            end: 5
+          }
+        ]
+      });
+    });
+    QUnit.test("don't extend forward", function(assert) {
       richtext.formatText(0, 3, {
         bold: true
       });
-      assert.deepEqual(richtext.debug_overlays(), {
+      assert.overlays({
         bold: [
           {
             start: 0,
@@ -32,29 +59,135 @@
           }
         ]
       });
-      richtext.formatText(3, 1, {
+      richtext.formatText(4, 3, {
         bold: true
       });
-      assert.deepEqual(richtext.debug_overlays(), {
+      return assert.overlays({
         bold: [
           {
             start: 0,
-            end: 4
+            end: 3
+          }, {
+            start: 4,
+            end: 7
           }
         ]
       });
     });
     QUnit.test('extend backward', function(assert) {
-      richtext = new CollaborativeRichText({
-        model: model,
-        parent: parent,
-        name: name
-      });
-      richtext.insertText(0, "123456789");
-      richtext.formatText(5, 2, {
+      richtext.formatText(4, 1, {
         bold: true
       });
-      assert.deepEqual(richtext.debug_overlays(), {
+      assert.overlays({
+        bold: [
+          {
+            start: 4,
+            end: 5
+          }
+        ]
+      });
+      richtext.formatText(3, 1, {
+        bold: true
+      });
+      return assert.overlays({
+        bold: [
+          {
+            start: 3,
+            end: 5
+          }
+        ]
+      });
+    });
+    QUnit.test("don't extend backward", function(assert) {
+      richtext.formatText(4, 1, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 4,
+            end: 5
+          }
+        ]
+      });
+      richtext.formatText(2, 1, {
+        bold: true
+      });
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 3
+          }, {
+            start: 4,
+            end: 5
+          }
+        ]
+      });
+    });
+    QUnit.test('connect two overlays', function(assert) {
+      richtext.formatText(2, 1, {
+        bold: true
+      });
+      richtext.formatText(4, 1, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 3
+          }, {
+            start: 4,
+            end: 5
+          }
+        ]
+      });
+      richtext.formatText(3, 1, {
+        bold: true
+      });
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 5
+          }
+        ]
+      });
+    });
+    QUnit.test('remove whole overlay', function(assert) {
+      richtext.formatText(2, 3, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 5
+          }
+        ]
+      });
+      richtext.formatText(2, 3, {
+        bold: null
+      });
+      return assert.overlays({});
+    });
+    QUnit.test('remove beginning', function(assert) {
+      richtext.formatText(2, 5, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 7
+          }
+        ]
+      });
+      richtext.formatText(2, 3, {
+        bold: null
+      });
+      return assert.overlays({
         bold: [
           {
             start: 5,
@@ -62,14 +195,146 @@
           }
         ]
       });
-      richtext.formatText(3, 2, {
+    });
+    QUnit.test('remove end', function(assert) {
+      richtext.formatText(2, 5, {
         bold: true
       });
-      assert.deepEqual(richtext.debug_overlays(), {
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 7
+          }
+        ]
+      });
+      richtext.formatText(4, 3, {
+        bold: null
+      });
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 4
+          }
+        ]
+      });
+    });
+    QUnit.test('split overlay', function(assert) {
+      richtext.formatText(2, 5, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 7
+          }
+        ]
+      });
+      richtext.formatText(3, 3, {
+        bold: null
+      });
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 3
+          }, {
+            start: 6,
+            end: 7
+          }
+        ]
+      });
+    });
+    QUnit.test('insert shifts overlay', function(assert) {
+      richtext.formatText(2, 3, {
+        bold: true
+      });
+      richtext.insertText(1, "hello");
+      return assert.overlays({
+        bold: [
+          {
+            start: 7,
+            end: 10
+          }
+        ]
+      });
+    });
+    QUnit.test('insert inside overlay', function(assert) {
+      richtext.formatText(2, 3, {
+        bold: true
+      });
+      richtext.insertText(3, "hello");
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 10
+          }
+        ]
+      });
+    });
+    QUnit.test('insert formatted text', function(assert) {
+      richtext.insertText(3, "hello", {
+        bold: true
+      });
+      return assert.overlays({
         bold: [
           {
             start: 3,
-            end: 7
+            end: 8
+          }
+        ]
+      });
+    });
+    QUnit.test('delete formatted text', function(assert) {
+      richtext.formatText(2, 3, {
+        bold: true
+      });
+      richtext.deleteText(2, 3);
+      return assert.overlays({});
+    });
+    QUnit.test('delete beginning of formatted text', function(assert) {
+      richtext.formatText(2, 2, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 4
+          }
+        ]
+      });
+      richtext.deleteText(2, 1);
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 3
+          }
+        ]
+      });
+    });
+    QUnit.test('delete end of formatted text', function(assert) {
+      richtext.formatText(2, 2, {
+        bold: true
+      });
+      assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 4
+          }
+        ]
+      });
+      richtext.deleteText(3, 1);
+      return assert.overlays({
+        bold: [
+          {
+            start: 2,
+            end: 3
           }
         ]
       });
