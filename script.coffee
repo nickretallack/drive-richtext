@@ -1,8 +1,18 @@
-clientId = '661099579330-dctm6hcm5co8jt8ug7qreu1kfn1t9ru3.apps.googleusercontent.com'
-realtimeUtils = new utils.RealtimeUtils
-  clientId: clientId
+CLIENT_ID = '661099579330-dctm6hcm5co8jt8ug7qreu1kfn1t9ru3.apps.googleusercontent.com'
+APP_ID = CLIENT_ID.split('-')[0]
+
+realtimeUtils = new utils.RealtimeUtils clientId: CLIENT_ID
 
 quill = new Quill '#editor'
+
+init_share = ->
+  id = realtimeUtils.getParam('id')
+  share = new gapi.drive.share.ShareClient APP_ID
+  share.setItemIds id
+
+  $('#share-button').show().on 'click', (event) ->
+    share.showSettingsDialog()
+  return
 
 authorize = ->
   # Attempt to authorize
@@ -10,9 +20,8 @@ authorize = ->
     if response.error
       # Authorization failed because this is the first time the user has used your application,
       # show the authorize button to prompt them to authorize manually.
-      button = document.getElementById('auth_button')
-      button.classList.add 'visible'
-      button.addEventListener 'click', ->
+      button = $('#auth-button')
+      button.show().on 'click', ->
         realtimeUtils.authorize ((response) ->
           start()
           return
@@ -69,6 +78,8 @@ printExceptions = (fun) ->
       console.log error
 
 onFileLoaded = printExceptions (doc) ->
+  init_share()
+
   # Overlay preview
 
   preview_overlay = (item) ->
