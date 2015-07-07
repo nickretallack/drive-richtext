@@ -1,6 +1,7 @@
 
 class CollaborativeRichText
   constructor: ({@model, parent, name, handlers}) ->
+    handlers ?= {}
     @setup_model parent, name
     @setup_events handlers
     @run_initial_events handlers
@@ -25,7 +26,7 @@ class CollaborativeRichText
   setup_events: (handlers) ->
     @overlays.addEventListener gapi.drive.realtime.EventType.VALUES_ADDED, (event) ->
       if handlers.preview_overlay
-        event.values.forEach handlers.preview_overlay
+        event.values.forEach handlers.preview_add_overlay
       if handlers.apply_format and not event.isLocal
         event.values.forEach (item) ->
           handlers.apply_format item, true
@@ -33,7 +34,7 @@ class CollaborativeRichText
 
     @overlays.addEventListener gapi.drive.realtime.EventType.VALUES_REMOVED, (event) ->
       if handlers.remove_overlay_preview
-        event.values.forEach handlers.remove_overlay_preview
+        event.values.forEach handlers.preview_remove_overlay
       if handlers.apply_format and not event.isLocal
         event.values.forEach (item) ->
           handlers.apply_format item, false
@@ -60,6 +61,24 @@ class CollaborativeRichText
 
   # Overlays
 
+  debug_overlays: ->
+    attributes = {}
+    for overlay in @overlays.asArray()
+      attribute = overlay.get('attribute')
+      attributes[attribute] ?= []
+      attributes[attribute].push
+        start: overlay.get('start').index
+        end: overlay.get('end').index
+
+    for attribute, overlays in attributes
+      overlays.sort (a,b) ->
+        start_comparison = a.start - b.start
+        if start_comparison is 0
+          return a.end - b.end
+        return start_comparison
+
+    return attributes
+
   create_overlay: (start_index, end_index, attribute) ->
     console.log 'create overlay:', start_index, end_index, attribute
     start_ref = @str.registerReference start_index, gapi.drive.realtime.IndexReference.DeleteMode.SHIFT_BEFORE_DELETE
@@ -77,7 +96,7 @@ class CollaborativeRichText
     return
 
   find_colliding_overlay: (attribute, index) ->
-    for overlay in @overlays.asArray
+    for overlay in @overlays.asArray()
       if attribute == overlay.get('attribute') and overlay.get('start').index <= index and overlay.get('end').index >= index
         return overlay
 
@@ -113,32 +132,44 @@ class CollaborativeRichText
       console.log 'remove end of overlay', attribute
       @create_overlay overlay_start.index, start_index, attribute
     else
-      # split this overlay into two
-      console.log 'split overlay', attribute
-      @create_overlay overlay_start.index, start_index, attribute # first half
-      @create_overlay end_index, overlay_end.index, attribute # second half
+      @split_overlay overlay, start_index, end_index, attribute
     return
+
+  split_overlay: (overlay, start_index, end_index, attribute) ->
+    console.log 'split overlay', attribute
+    @create_overlay overlay.get('start').index, start_index, attribute # first half
+    @create_overlay end_index, overlay.get('end').index, attribute # second half
 
   extend_or_create_overlay: (start_index, end_index, attribute) ->
     found_start = @find_colliding_overlay attribute, start_index - 1
     found_end = @find_colliding_overlay attribute, end_index
     if found_start and found_end
-      console.log 'connect two overlays', attribute
-      @remove_overlay found_start
-      @remove_overlay found_end
-      @create_overlay found_start.get('start').index, found_end.get('end').index, attribute
+      connect_two_overlays found_start, found_end, attribute
     else if found_start
-      console.log 'extend overlay forward', attribute
-      @remove_overlay found_start
-      @create_overlay found_start.get('start').index, end_index, attribute
+      @extend_overlay_forward found_start, end_index, attribute
     else if found_end
-      console.log 'extend overlay backward', attribute
-      @remove_overlay found_end
-      @create_overlay start_index, found_end.get('end').index, attribute
+      @extend_overlay_backward found_end, start_index, attribute
     else
       console.log 'create new overlay', attribute
       @create_overlay start_index, end_index, attribute
     return
+
+  connect_two_overlays: (first_overlay, second_overlay, attribute) ->
+    console.log 'connect two overlays', attribute
+    @remove_overlay first_overlay
+    @remove_overlay second_overlay
+    @create_overlay first_overlay.get('start').index, second_overlay.get('end').index, attribute    
+
+  extend_overlay_forward: (overlay, end_index, attribute) ->
+    console.log 'extend overlay forward', attribute
+    @remove_overlay overlay
+    @create_overlay overlay.get('start').index, end_index, attribute
+
+  extend_overlay_backward: (overaly, start_index, attribute) ->
+    console.log 'extend overlay backward', attribute
+    @remove_overlay overlay
+    @create_overlay start_index, overlay.get('end').index, attribute
+
 
   # Public API
 

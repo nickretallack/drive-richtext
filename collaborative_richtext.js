@@ -6,6 +6,9 @@
     function CollaborativeRichText(_arg) {
       var handlers, name, parent;
       this.model = _arg.model, parent = _arg.parent, name = _arg.name, handlers = _arg.handlers;
+      if (handlers == null) {
+        handlers = {};
+      }
       this.setup_model(parent, name);
       this.setup_events(handlers);
       this.run_initial_events(handlers);
@@ -31,7 +34,7 @@
     CollaborativeRichText.prototype.setup_events = function(handlers) {
       this.overlays.addEventListener(gapi.drive.realtime.EventType.VALUES_ADDED, function(event) {
         if (handlers.preview_overlay) {
-          event.values.forEach(handlers.preview_overlay);
+          event.values.forEach(handlers.preview_add_overlay);
         }
         if (handlers.apply_format && !event.isLocal) {
           event.values.forEach(function(item) {
@@ -41,7 +44,7 @@
       });
       this.overlays.addEventListener(gapi.drive.realtime.EventType.VALUES_REMOVED, function(event) {
         if (handlers.remove_overlay_preview) {
-          event.values.forEach(handlers.remove_overlay_preview);
+          event.values.forEach(handlers.preview_remove_overlay);
         }
         if (handlers.apply_format && !event.isLocal) {
           event.values.forEach(function(item) {
@@ -83,6 +86,35 @@
       }
     };
 
+    CollaborativeRichText.prototype.debug_overlays = function() {
+      var attribute, attributes, overlay, overlays, _i, _j, _len, _len1, _ref;
+      attributes = {};
+      _ref = this.overlays.asArray();
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        overlay = _ref[_i];
+        attribute = overlay.get('attribute');
+        if (attributes[attribute] == null) {
+          attributes[attribute] = [];
+        }
+        attributes[attribute].push({
+          start: overlay.get('start').index,
+          end: overlay.get('end').index
+        });
+      }
+      for (overlays = _j = 0, _len1 = attributes.length; _j < _len1; overlays = ++_j) {
+        attribute = attributes[overlays];
+        overlays.sort(function(a, b) {
+          var start_comparison;
+          start_comparison = a.start - b.start;
+          if (start_comparison === 0) {
+            return a.end - b.end;
+          }
+          return start_comparison;
+        });
+      }
+      return attributes;
+    };
+
     CollaborativeRichText.prototype.create_overlay = function(start_index, end_index, attribute) {
       var end_ref, start_ref;
       console.log('create overlay:', start_index, end_index, attribute);
@@ -103,7 +135,7 @@
 
     CollaborativeRichText.prototype.find_colliding_overlay = function(attribute, index) {
       var overlay, _i, _len, _ref;
-      _ref = this.overlays.asArray;
+      _ref = this.overlays.asArray();
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         overlay = _ref[_i];
         if (attribute === overlay.get('attribute') && overlay.get('start').index <= index && overlay.get('end').index >= index) {
@@ -147,10 +179,14 @@
         console.log('remove end of overlay', attribute);
         this.create_overlay(overlay_start.index, start_index, attribute);
       } else {
-        console.log('split overlay', attribute);
-        this.create_overlay(overlay_start.index, start_index, attribute);
-        this.create_overlay(end_index, overlay_end.index, attribute);
+        this.split_overlay(overlay, start_index, end_index, attribute);
       }
+    };
+
+    CollaborativeRichText.prototype.split_overlay = function(overlay, start_index, end_index, attribute) {
+      console.log('split overlay', attribute);
+      this.create_overlay(overlay.get('start').index, start_index, attribute);
+      return this.create_overlay(end_index, overlay.get('end').index, attribute);
     };
 
     CollaborativeRichText.prototype.extend_or_create_overlay = function(start_index, end_index, attribute) {
@@ -158,22 +194,34 @@
       found_start = this.find_colliding_overlay(attribute, start_index - 1);
       found_end = this.find_colliding_overlay(attribute, end_index);
       if (found_start && found_end) {
-        console.log('connect two overlays', attribute);
-        this.remove_overlay(found_start);
-        this.remove_overlay(found_end);
-        this.create_overlay(found_start.get('start').index, found_end.get('end').index, attribute);
+        connect_two_overlays(found_start, found_end, attribute);
       } else if (found_start) {
-        console.log('extend overlay forward', attribute);
-        this.remove_overlay(found_start);
-        this.create_overlay(found_start.get('start').index, end_index, attribute);
+        this.extend_overlay_forward(found_start, end_index, attribute);
       } else if (found_end) {
-        console.log('extend overlay backward', attribute);
-        this.remove_overlay(found_end);
-        this.create_overlay(start_index, found_end.get('end').index, attribute);
+        this.extend_overlay_backward(found_end, start_index, attribute);
       } else {
         console.log('create new overlay', attribute);
         this.create_overlay(start_index, end_index, attribute);
       }
+    };
+
+    CollaborativeRichText.prototype.connect_two_overlays = function(first_overlay, second_overlay, attribute) {
+      console.log('connect two overlays', attribute);
+      this.remove_overlay(first_overlay);
+      this.remove_overlay(second_overlay);
+      return this.create_overlay(first_overlay.get('start').index, second_overlay.get('end').index, attribute);
+    };
+
+    CollaborativeRichText.prototype.extend_overlay_forward = function(overlay, end_index, attribute) {
+      console.log('extend overlay forward', attribute);
+      this.remove_overlay(overlay);
+      return this.create_overlay(overlay.get('start').index, end_index, attribute);
+    };
+
+    CollaborativeRichText.prototype.extend_overlay_backward = function(overaly, start_index, attribute) {
+      console.log('extend overlay backward', attribute);
+      this.remove_overlay(overlay);
+      return this.create_overlay(start_index, overlay.get('end').index, attribute);
     };
 
     CollaborativeRichText.prototype.formatText = function(index, length, attributes) {

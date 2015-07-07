@@ -122,8 +122,8 @@
         insert_text: insert_text,
         delete_text: delete_text,
         apply_format: apply_format,
-        preview_overlay: preview_overlay,
-        remove_overlay_preview: remove_overlay_preview
+        preview_add_overlay: preview_overlay,
+        preview_remove_overlay: remove_overlay_preview
       }
     });
     quill.on('text-change', function(delta, source) {

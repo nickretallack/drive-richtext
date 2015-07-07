@@ -111,7 +111,7 @@ onFileLoaded = printExceptions (doc) ->
     model: model
     parent: root
     name: 'richtext'
-    handlers: {insert_text, delete_text, apply_format, preview_overlay, remove_overlay_preview}
+    handlers: {insert_text, delete_text, apply_format, preview_add_overlay:preview_overlay, preview_remove_overlay:remove_overlay_preview}
 
   quill.on 'text-change', (delta, source) ->
     if source == 'user'
